@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐝 Smart Hive Monitor</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <style>
+        /* Custom Scrollbar for Tables */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        /* Tab Transitions */
+        .tab-content { display: none; animation: fadeIn 0.5s; }
+        .tab-content.active { display: block; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Table Styling Overrides */
+        td, th { white-space: nowrap; }
+        
+        /* Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none; 
+            background: transparent; 
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #eab308; /* Yellow-500 */
+            cursor: pointer;
+            margin-top: -8px; 
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #475569;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 font-sans selection:bg-yellow-500 selection:text-slate-900">
+
+    <!-- Navbar / Header -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div class="flex flex-col md:flex-row justify-between items-center border-b border-slate-700 pb-6 mb-6 gap-4">
+            <div class="text-center md:text-left">
+                <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
+                    <i class="fas fa-bug"></i> Smart Hive Monitor
+                </h1>
+                <p class="text-slate-400 text-sm mt-1">Real-time IoT Sensor Data (ThingSpeak)</p>
+            </div>
+            
+            <!-- Tab Buttons -->
+            <div class="flex bg-slate-800 p-1 rounded-lg">
+                <button onclick="switchTab('charts')" id="btn-charts" class="px-6 py-2 rounded-md text-sm font-medium transition-all bg-yellow-500 text-slate-900 shadow-lg">
+                    <i class="fas fa-chart-line mr-2"></i>Graphs
+                </button>
+                <button onclick="switchTab('tables')" id="btn-tables" class="px-6 py-2 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-700">
+                    <i class="fas fa-table mr-2"></i>Tables
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="text-center py-4 text-yellow-400 hidden">
+            <i class="fas fa-spinner fa-spin text-2xl"></i> Fetching latest data...
+        </div>
+
+        <!-- VIEW 1: CHARTS -->
+        <div id="view-charts" class="tab-content active">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Weight Card -->
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg">
+                    <h2 class="text-lg font-semibold text-yellow-400 mb-4"><i class="fas fa-weight-hanging mr-2"></i> Weight Trend</h2>
+                    <div class="relative h-64 w-full"><canvas id="weightChart"></canvas></div>
+                </div>
+                <!-- Sound Frequency Card -->
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg">
+                    <h2 class="text-lg font-semibold text-purple-400 mb-4"><i class="fas fa-microphone-lines mr-2"></i> Sound Frequency</h2>
+                    <div class="relative h-64 w-full"><canvas id="freqChart"></canvas></div>
+                </div>
+                <!-- Climate Card -->
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg">
+                    <h2 class="text-lg font-semibold text-blue-400 mb-4"><i class="fas fa-temperature-high mr-2"></i> Temperature & Humidity</h2>
+                    <div class="relative h-64 w-full"><canvas id="climateChart"></canvas></div>
+                </div>
+                <!-- Motion Card -->
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg md:col-span-1">
+                    <h2 class="text-lg font-semibold text-red-400 mb-4"><i class="fas fa-arrows-up-down-left-right mr-2"></i> Accelerometer (G)</h2>
+                    <div class="relative h-64 w-full"><canvas id="accelChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 2: TABLES -->
+        <div id="view-tables" class="tab-content">
+            
+            <!-- Slider Control -->
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-6 flex flex-col sm:flex-row items-center justify-between shadow-lg">
+                <div class="flex items-center gap-3 mb-2 sm:mb-0">
+                    <i class="fas fa-filter text-yellow-400 text-xl"></i>
+                    <span class="font-semibold text-slate-300">Data Filter</span>
+                </div>
+                <div class="flex items-center w-full sm:w-auto bg-slate-900 px-4 py-2 rounded-lg border border-slate-700">
+                    <label for="rowRange" class="text-sm text-slate-400 mr-4 whitespace-nowrap">Show last:</label>
+                    <input type="range" id="rowRange" min="1" max="10" value="10" step="1" 
+                           class="w-full sm:w-48 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                           oninput="updateSliderValue(this.value)">
+                    <span id="sliderValue" class="ml-4 text-yellow-400 font-bold font-mono w-6 text-right">10</span>
+                    <span class="ml-2 text-sm text-slate-400">rows</span>
+                </div>
+            </div>
+
+            <!-- 4 Tables Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                
+                <!-- 1. DHT22 Table -->
+                <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                    <div class="bg-slate-700/50 px-6 py-4 border-b border-slate-600">
+                        <h3 class="text-lg font-semibold text-blue-400">🌡️ DHT22 (Climate)</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-300">
+                            <thead class="bg-slate-900 text-slate-400 uppercase font-bold text-xs">
+                                <tr>
+                                    <th class="px-6 py-3">Date & Time</th>
+                                    <th class="px-6 py-3 text-red-400">Temp (°C)</th>
+                                    <th class="px-6 py-3 text-blue-400">Humidity (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-dht-body" class="divide-y divide-slate-700"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 2. HX711 Table -->
+                <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                    <div class="bg-slate-700/50 px-6 py-4 border-b border-slate-600">
+                        <h3 class="text-lg font-semibold text-yellow-400">⚖️ HX711 (Weight)</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-300">
+                            <thead class="bg-slate-900 text-slate-400 uppercase font-bold text-xs">
+                                <tr>
+                                    <th class="px-6 py-3">Date & Time</th>
+                                    <th class="px-6 py-3 text-yellow-400">Weight (g)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-hx-body" class="divide-y divide-slate-700"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 3. MAX4466 Table -->
+                <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                    <div class="bg-slate-700/50 px-6 py-4 border-b border-slate-600">
+                        <h3 class="text-lg font-semibold text-purple-400">🎤 MAX4466 (Sound)</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-300">
+                            <thead class="bg-slate-900 text-slate-400 uppercase font-bold text-xs">
+                                <tr>
+                                    <th class="px-6 py-3">Date & Time</th>
+                                    <th class="px-6 py-3 text-purple-400">Frequency (Hz)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-max-body" class="divide-y divide-slate-700"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 4. MPU6050 Table -->
+                <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden lg:col-span-2">
+                    <div class="bg-slate-700/50 px-6 py-4 border-b border-slate-600">
+                        <h3 class="text-lg font-semibold text-red-400">🌀 MPU6050 (Motion)</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-300">
+                            <thead class="bg-slate-900 text-slate-400 uppercase font-bold text-xs">
+                                <tr>
+                                    <th class="px-6 py-3">Date & Time</th>
+                                    <th class="px-6 py-3">Accel X</th>
+                                    <th class="px-6 py-3">Accel Y</th>
+                                    <th class="px-6 py-3">Accel Z</th>
+                                    <th class="px-6 py-3">Gyro X</th>
+                                    <th class="px-6 py-3">Gyro Y</th>
+                                    <th class="px-6 py-3">Gyro Z</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-mpu-body" class="divide-y divide-slate-700"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-12 text-center text-slate-500 text-sm">
+            <p>Data provided by <a href="https://thingspeak.com" target="_blank" class="text-blue-400 hover:underline">ThingSpeak API</a></p>
+            <p class="mt-2 text-xs">Channels: 3173934 & 3175777</p>
+        </div>
+    </div>
+
+    <script>
+        // --- GLOBAL DATA STORE ---
+        let globalFeeds1 = [];
+        let globalFeeds2 = [];
+        
+        // --- TABS LOGIC ---
+        function switchTab(tabName) {
+            document.getElementById('view-charts').classList.remove('active');
+            document.getElementById('view-tables').classList.remove('active');
+            
+            document.getElementById('btn-charts').className = "px-6 py-2 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-700";
+            document.getElementById('btn-tables').className = "px-6 py-2 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-700";
+
+            document.getElementById('view-' + tabName).classList.add('active');
+            document.getElementById('btn-' + tabName).className = "px-6 py-2 rounded-md text-sm font-medium transition-all bg-yellow-500 text-slate-900 shadow-lg";
+        }
+
+        // --- SLIDER LOGIC ---
+        function updateSliderValue(val) {
+            document.getElementById('sliderValue').innerText = val;
+            renderTables(globalFeeds1, globalFeeds2, parseInt(val));
+        }
+
+        // --- DATA FETCHING ---
+        const CH1_URL = "https://api.thingspeak.com/channels/3173934/feeds.json?api_key=U6DLHHKZ2XYGUPPN&results=10";
+        const CH2_URL = "https://api.thingspeak.com/channels/3175777/feeds.json?api_key=X28B8Y2EE94ZX0Z5&results=10";
+
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = '#334155';
+        let chartInstances = {};
+
+        async function fetchAllData() {
+            const loader = document.getElementById('loading');
+            loader.classList.remove('hidden');
+
+            try {
+                const [res1, res2] = await Promise.all([fetch(CH1_URL), fetch(CH2_URL)]);
+                const data1 = await res1.json();
+                const data2 = await res2.json();
+
+                globalFeeds1 = data1.feeds || [];
+                globalFeeds2 = data2.feeds || [];
+
+                updateCharts(globalFeeds1, globalFeeds2);
+                
+                const currentLimit = document.getElementById('rowRange').value;
+                renderTables(globalFeeds1, globalFeeds2, parseInt(currentLimit));
+
+            } catch (err) {
+                console.error("Error fetching data:", err);
+            } finally {
+                loader.classList.add('hidden');
+            }
+        }
+
+        // --- TABLE RENDERER ---
+        function renderTables(feeds1, feeds2, limit) {
+            // Get table bodies
+            const dhtBody = document.getElementById('table-dht-body');
+            const hxBody = document.getElementById('table-hx-body');
+            const maxBody = document.getElementById('table-max-body');
+            const mpuBody = document.getElementById('table-mpu-body');
+            
+            // Clear existing
+            dhtBody.innerHTML = '';
+            hxBody.innerHTML = '';
+            maxBody.innerHTML = '';
+            mpuBody.innerHTML = '';
+
+            // Slice data based on slider limit
+            const slice1 = [...feeds1].reverse().slice(0, limit);
+            const slice2 = [...feeds2].reverse().slice(0, limit);
+
+            // 1. DHT22 (Channel 1: Field 1 & 2)
+            slice1.forEach(f => {
+                const date = new Date(f.created_at).toLocaleString();
+                const row = `
+                    <tr class="hover:bg-slate-700/50 transition">
+                        <td class="px-6 py-4">${date}</td>
+                        <td class="px-6 py-4 font-bold text-red-300">${f.field1 || '-'}</td>
+                        <td class="px-6 py-4 font-bold text-blue-300">${f.field2 || '-'}</td>
+                    </tr>`;
+                dhtBody.insertAdjacentHTML('beforeend', row);
+            });
+
+            // 2. MPU6050 (Channel 1: Fields 3,4,5,6,7,8)
+            slice1.forEach(f => {
+                const date = new Date(f.created_at).toLocaleString();
+                const row = `
+                    <tr class="hover:bg-slate-700/50 transition">
+                        <td class="px-6 py-4">${date}</td>
+                        <td class="px-6 py-4 font-mono text-xs text-green-300">${f.field3 || '-'}</td>
+                        <td class="px-6 py-4 font-mono text-xs text-green-300">${f.field4 || '-'}</td>
+                        <td class="px-6 py-4 font-mono text-xs text-green-300">${f.field5 || '-'}</td>
+                        <td class="px-6 py-4 font-mono text-xs text-orange-300">${f.field6 || '-'}</td>
+                        <td class="px-6 py-4 font-mono text-xs text-orange-300">${f.field7 || '-'}</td>
+                        <td class="px-6 py-4 font-mono text-xs text-orange-300">${f.field8 || '-'}</td>
+                    </tr>`;
+                mpuBody.insertAdjacentHTML('beforeend', row);
+            });
+
+            // 3. HX711 (Channel 2: Field 1)
+            slice2.forEach(f => {
+                const date = new Date(f.created_at).toLocaleString();
+                const row = `
+                    <tr class="hover:bg-slate-700/50 transition">
+                        <td class="px-6 py-4">${date}</td>
+                        <td class="px-6 py-4 font-bold text-yellow-300">${f.field1 ? f.field1 + ' g' : '-'}</td>
+                    </tr>`;
+                hxBody.insertAdjacentHTML('beforeend', row);
+            });
+
+            // 4. MAX4466 (Channel 2: Field 3)
+            slice2.forEach(f => {
+                const date = new Date(f.created_at).toLocaleString();
+                const row = `
+                    <tr class="hover:bg-slate-700/50 transition">
+                        <td class="px-6 py-4">${date}</td>
+                        <td class="px-6 py-4 font-bold text-purple-300">${f.field3 ? f.field3 + ' Hz' : '-'}</td>
+                    </tr>`;
+                maxBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        // --- CHART RENDERER (Unchanged Logic) ---
+        function formatTime(ts) {
+            return new Date(ts).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        function updateCharts(feeds1, feeds2) {
+            const labels1 = feeds1.map(f => formatTime(f.created_at));
+            const labels2 = feeds2.map(f => formatTime(f.created_at));
+
+            renderChart('weightChart', labels2, [{
+                label: 'Weight (g)',
+                data: feeds2.map(f => f.field1),
+                borderColor: '#eab308',
+                backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                fill: true, tension: 0.4
+            }]);
+
+            renderChart('freqChart', labels2, [{
+                label: 'Frequency (Hz)',
+                data: feeds2.map(f => f.field3),
+                borderColor: '#c084fc',
+                backgroundColor: 'rgba(192, 132, 252, 0.1)',
+                fill: true, tension: 0.4
+            }]);
+
+            renderChart('climateChart', labels1, [
+                { label: 'Temp (°C)', data: feeds1.map(f => f.field1), borderColor: '#f87171', yAxisID: 'y', tension: 0.3 },
+                { label: 'Humidity (%)', data: feeds1.map(f => f.field2), borderColor: '#60a5fa', yAxisID: 'y1', tension: 0.3 }
+            ]);
+
+            renderChart('accelChart', labels1, [
+                { label: 'X', data: feeds1.map(f => f.field3), borderColor: '#f87171', pointRadius: 0, borderWidth: 2 },
+                { label: 'Y', data: feeds1.map(f => f.field4), borderColor: '#34d399', pointRadius: 0, borderWidth: 2 },
+                { label: 'Z', data: feeds1.map(f => f.field5), borderColor: '#60a5fa', pointRadius: 0, borderWidth: 2 }
+            ]);
+        }
+
+        function renderChart(canvasId, labels, datasets) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const scales = { x: { grid: { color: '#334155' } }, y: { grid: { color: '#334155' } } };
+            if(canvasId === 'climateChart') {
+                scales.y = { type: 'linear', display: true, position: 'left', grid: { color: '#334155' } };
+                scales.y1 = { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false } };
+            }
+            if (chartInstances[canvasId]) {
+                chartInstances[canvasId].data.labels = labels;
+                chartInstances[canvasId].data.datasets = datasets;
+                chartInstances[canvasId].update();
+            } else {
+                chartInstances[canvasId] = new Chart(ctx, {
+                    type: 'line', data: { labels, datasets },
+                    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: scales, plugins: { legend: { labels: { color: '#e2e8f0' } } } }
+                });
+            }
+        }
+
+        fetchAllData();
+        setInterval(fetchAllData, 15000);
+    </script>
+</body>
+</html>
